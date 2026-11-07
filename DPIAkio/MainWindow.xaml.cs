@@ -46,14 +46,7 @@ public sealed partial class MainWindow : Window
         // Tray
         _tray = new TrayIcon(iconPath, "DPIAkio");
         _tray.Clicked += ShowFromTray;
-        _tray.MenuProvider = () =>
-        [
-            (_runner.IsRunning ? "Thoát App" : "Bật GUI",
-                PowerButton.IsEnabled ? () => PowerButton_Click(this, new RoutedEventArgs()) : null),
-            ("Mở DPIAkio", ShowFromTray),
-            ("-", null),
-            ("Thoát", ExitApp),
-        ];
+        _tray.MenuProvider = BuildTrayMenu;
         AppWindow.Closing += (_, e) =>
         {
             if (_exiting || !_settings.CloseToTray) return;
@@ -338,23 +331,29 @@ public sealed partial class MainWindow : Window
     {
         // Ignore deselection caused by filtering / list rebuilds
         if (_rebuildingList || DnsList.SelectedItem is not DnsProvider p || p == _selectedProvider) return;
-        _selectedProvider = p;
-
-        if (!p.IsCustom)
-        {
-            var wasLoading = _loading;
-            _loading = true; // fill boxes without saving half-updated state
-            DnsAddrBox.Text = p.V4;
-            DnsPortBox.Value = p.Port;
-            DnsV6AddrBox.Text = p.V6;
-            DnsV6PortBox.Value = p.Port;
-            if (p.V6.Length == 0) DnsV6Toggle.IsOn = false;
-            _loading = wasLoading;
-        }
+        FillDnsFields(p);
         Option_Changed(sender, e);
     }
 
-    private async void ProbeAll_Click(object sender, RoutedEventArgs e)
+    /// <summary>Make <paramref name="p"/> the active resolver in the address fields (does not save).</summary>
+    private void FillDnsFields(DnsProvider p)
+    {
+        _selectedProvider = p;
+        if (p.IsCustom) return;
+        var wasLoading = _loading;
+        _loading = true; // fill boxes without saving half-updated state
+        DnsAddrBox.Text = p.V4;
+        DnsPortBox.Value = p.Port;
+        DnsV6AddrBox.Text = p.V6;
+        DnsV6PortBox.Value = p.Port;
+        if (p.V6.Length == 0) DnsV6Toggle.IsOn = false;
+        _loading = wasLoading;
+    }
+
+    private async void ProbeAll_Click(object sender, RoutedEventArgs e) => await ProbeAllAsync();
+
+    /// <summary>Query every catalog resolver; returns the ones answering correctly, fastest first.</summary>
+    private async Task<List<DnsProvider>> ProbeAllAsync()
     {
         ProbeAllButton.IsEnabled = false;
         DnsProbeStatus.Text = $"Đang đo… (truy vấn {ProbeHost})";
@@ -378,7 +377,135 @@ public sealed partial class MainWindow : Window
         DnsProbeStatus.Text = ok.Count == 0
             ? "Không DNS nào trả đúng IP. Nếu goodbyedpi đang bật, tắt đi rồi đo lại."
             : $"{ok.Count}/{targets.Count} DNS trả đúng IP. Nhanh nhất: {string.Join(", ", ok.Take(3).Select(p => $"{p.Name} ({p.LastLatency} ms)"))}.";
-        ProbeAllButton.IsEnabled = true;
+        ProbeAllButton.IsEnabled = !_runner.IsRunning;
+        return ok;
+    }
+
+    // ---------- tray quick actions ----------
+
+    private string ModeName => (ModeCombo.SelectedItem as ModePreset) is { } m
+        ? (m.Flag.Length > 0 ? m.Title.Split(" (")[0] : "Tùy chỉnh")
+        : "?";
+
+    private string DnsName => !DnsToggle.IsOn
+        ? "DNS mặc định"
+        : _selectedProvider is { IsCustom: false } p ? p.Name : $"DNS {DnsAddrBox.Text}";
+
+    private IReadOnlyList<TrayMenuItem> BuildTrayMenu()
+    {
+        bool on = _runner.IsRunning;
+        bool canRun = PowerButton.IsEnabled;
+
+        var modes = ModePreset.All.Select(m =>
+            new TrayMenuItem(m.Title, () => QuickSetMode(m)) { Checked = ModeCombo.SelectedItem as ModePreset == m }).ToList();
+
+        var dns = new List<TrayMenuItem>
+        {
+            new("Không đổi DNS", QuickDnsOff) { Checked = !DnsToggle.IsOn },
+            new("Chọn DNS nhanh nhất", () => _ = QuickPickFastestDnsAsync()),
+            TrayMenuItem.Separator,
+        };
+        foreach (var group in DnsCatalog.Groups.Where(g => g != DnsCatalog.GOther))
+        {
+            var items = DnsCatalog.All.Where(p => p.Group == group).Select(p =>
+                new TrayMenuItem(p.LastLatency is int ms ? $"{p.Name}  ·  {ms} ms" : p.Name, () => QuickSetDns(p))
+                { Checked = DnsToggle.IsOn && _selectedProvider == p }).ToList();
+            dns.Add(TrayMenuItem.Sub(group, items) with { Checked = items.Any(i => i.Checked) });
+        }
+        if (!string.IsNullOrWhiteSpace(DnsAddrBox.Text) && _selectedProvider?.IsCustom == true)
+            dns.Add(new TrayMenuItem($"Tùy chỉnh ({DnsAddrBox.Text})", () => QuickSetDns(DnsCatalog.Custom)) { Checked = DnsToggle.IsOn });
+
+        return
+        [
+            TrayMenuItem.Label($"{(on ? "Đang bật" : "Đã tắt")}  ·  {ModeName}  ·  {DnsName}"),
+            TrayMenuItem.Separator,
+            new(on ? "Tắt" : "Bật", canRun ? QuickToggle : null),
+            new("Khởi động lại", on ? QuickRestart : null),
+            TrayMenuItem.Separator,
+            TrayMenuItem.Sub($"Chế độ: {ModeName}", modes),
+            TrayMenuItem.Sub($"DNS: {DnsName}", dns),
+            new("Xóa cache DNS", QuickFlushDns),
+            TrayMenuItem.Separator,
+            new("Chạy cùng Windows", () => StartupToggle.IsOn = !StartupToggle.IsOn)
+                { Checked = StartupToggle.IsOn, Enabled = StartupToggle.IsEnabled },
+            TrayMenuItem.Separator,
+            new("Mở cửa sổ", ShowFromTray) { IsDefault = true },
+            new("Thoát", ExitApp),
+        ];
+    }
+
+    private void QuickToggle() => PowerButton_Click(this, new RoutedEventArgs());
+
+    private void QuickRestart()
+    {
+        AppendLog("[DPIAkio] Khởi động lại goodbyedpi.");
+        RestartIfRunning();
+    }
+
+    private void QuickSetMode(ModePreset mode)
+    {
+        if (ModeCombo.SelectedItem as ModePreset == mode) return;
+        ModeCombo.SelectedItem = mode; // SelectionChanged saves settings
+        AppendLog($"[DPIAkio] Đổi chế độ: {mode.Title}.");
+        RestartIfRunning();
+    }
+
+    private void QuickSetDns(DnsProvider p)
+    {
+        FillDnsFields(p);
+        _loading = true;
+        DnsToggle.IsOn = true;
+        _loading = false;
+        _rebuildingList = true;
+        try { DnsList.SelectedItem = p; } catch { } // highlight in the list (ignored if filtered out)
+        _rebuildingList = false;
+        SaveFromUi();
+        RefreshPreview();
+        AppendLog($"[DPIAkio] Đổi DNS: {DnsName} ({DnsAddrBox.Text}:{DnsPortBox.Value}).");
+        RestartIfRunning();
+    }
+
+    private void QuickDnsOff()
+    {
+        if (!DnsToggle.IsOn) return;
+        DnsToggle.IsOn = false; // Toggled saves settings
+        AppendLog("[DPIAkio] Tắt chuyển hướng DNS.");
+        RestartIfRunning();
+    }
+
+    private async Task QuickPickFastestDnsAsync()
+    {
+        // Probing while goodbyedpi redirects DNS would measure the redirect target, not each resolver.
+        bool wasRunning = _runner.IsRunning;
+        if (wasRunning)
+        {
+            _wantRunning = false; // keep the watchdog from restarting it mid-probe
+            _runner.Stop();
+            AppendLog("[DPIAkio] Tạm tắt để đo DNS…");
+        }
+        var ok = await ProbeAllAsync();
+        if (ok.Count > 0)
+        {
+            AppendLog($"[DPIAkio] DNS nhanh nhất: {ok[0].Name} ({ok[0].LastLatency} ms).");
+            QuickSetDns(ok[0]);
+        }
+        else AppendLog("[DPIAkio] Không DNS nào trả đúng IP, giữ nguyên cấu hình.");
+        if (wasRunning && !_runner.IsRunning) StartDpi();
+        UpdateStatus();
+    }
+
+    private void QuickFlushDns() =>
+        AppendLog(GoodbyeDpiRunner.FlushDnsCache() ? "[DPIAkio] Đã xóa cache DNS." : "[DPIAkio] Không xóa được cache DNS.");
+
+    /// <summary>Apply changed options immediately: restart goodbyedpi when it is running.</summary>
+    private void RestartIfRunning()
+    {
+        if (_runner.IsRunning)
+        {
+            _runner.Stop(); // _wantRunning stays true; the stale Exited is ignored once the new process runs
+            StartDpi();
+        }
+        else UpdateStatus();
     }
 
     private static Brush Res(string key) => (Brush)Application.Current.Resources[key];
@@ -450,7 +577,7 @@ public sealed partial class MainWindow : Window
         bool on = _runner.IsRunning;
         StatusTitle.Text = on ? "Đang bật" : "Đã tắt";
         StatusDetail.Text = on
-            ? $"GoodbyeDPI đang chạy với {(ModeCombo.SelectedItem as ModePreset)?.Title ?? "tùy chỉnh"}"
+            ? $"{ModeName}  ·  {DnsName}"
             : "Bấm Bật để bắt đầu vượt DPI";
         StatusIcon.Glyph = on ? "" : "";
         StatusRing.Fill = on
@@ -463,7 +590,8 @@ public sealed partial class MainWindow : Window
         PowerGlyph.Glyph = on ? "" : "";
         OptionsHost.IsEnabled = !on;
         RunningHint.IsOpen = on;
-        _tray.SetTooltip(on ? "DPIAkio — đang bật" : "DPIAkio — đã tắt");
+        ProbeAllButton.IsEnabled = !on; // probing while redirecting DNS gives wrong numbers
+        _tray.SetTooltip(on ? $"DPIAkio: đang bật\n{ModeName} · {DnsName}" : "DPIAkio: đã tắt");
     }
 
     // ---------- log ----------
