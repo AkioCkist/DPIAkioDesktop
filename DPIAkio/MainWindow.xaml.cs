@@ -48,7 +48,7 @@ public sealed partial class MainWindow : Window
         _tray.Clicked += ShowFromTray;
         _tray.MenuProvider = () =>
         [
-            (_runner.IsRunning ? "Tắt GoodbyeDPI" : "Bật GoodbyeDPI",
+            (_runner.IsRunning ? "Thoát App" : "Bật GUI",
                 PowerButton.IsEnabled ? () => PowerButton_Click(this, new RoutedEventArgs()) : null),
             ("Mở DPIAkio", ShowFromTray),
             ("-", null),
