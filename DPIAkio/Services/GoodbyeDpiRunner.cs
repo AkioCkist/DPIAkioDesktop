@@ -43,6 +43,9 @@ public sealed class GoodbyeDpiRunner : IDisposable
         p.ErrorDataReceived += (_, e) => { if (e.Data != null) Output?.Invoke(e.Data); };
         p.Exited += (_, _) => Exited?.Invoke();
         p.Start();
+        // Packet processing must not be starved when a game pegs the CPU (DNS/HTTPS latency spikes).
+        // goodbyedpi is idle unless web/DNS packets arrive, so this costs games nothing.
+        try { p.PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
         p.BeginOutputReadLine();
         p.BeginErrorReadLine();
         _process = p;
@@ -79,6 +82,15 @@ public sealed class GoodbyeDpiRunner : IDisposable
         }
         return n;
     }
+
+    /// <summary>Drop cached (possibly poisoned) DNS answers, e.g. after switching networks.</summary>
+    public static bool FlushDnsCache()
+    {
+        try { return DnsFlushResolverCache(); } catch { return false; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("dnsapi.dll")]
+    private static extern bool DnsFlushResolverCache();
 
     public void Dispose() => Stop();
 }

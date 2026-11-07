@@ -201,6 +201,32 @@
                 </StackPanel>
                 </ContentControl>
 
+                <!-- System (usable while running) -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="10">
+                        <TextBlock Text="Hệ thống" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock Text="Chạy cùng Windows" />
+                                <TextBlock Text="Khi đăng nhập: mở DPIAkio ẩn dưới khay và bật GoodbyeDPI luôn, không hỏi UAC (Task Scheduler)."
+                                           Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <ToggleSwitch x:Name="StartupToggle" Grid.Column="1" OnContent="Bật" OffContent="Tắt" MinWidth="0"
+                                          VerticalAlignment="Center" Toggled="StartupToggle_Toggled" />
+                        </Grid>
+                        <CheckBox x:Name="CloseToTrayCheck" Content="Bấm X thì thu xuống khay (GoodbyeDPI vẫn chạy)"
+                                  Checked="Option_Changed" Unchecked="Option_Changed" />
+                        <TextBlock Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Text="Khi chơi game nên để app dưới khay: cửa sổ ẩn thì không vẽ lại, nhật ký ngừng cập nhật và RAM được trả lại cho hệ thống. Packet của game (UDP) không đi qua GoodbyeDPI nên không tăng ping." />
+                    </StackPanel>
+                </Border>
+
                 <!-- Log -->
                 <Border Style="{StaticResource CardStyle}">
                     <StackPanel Spacing="10">

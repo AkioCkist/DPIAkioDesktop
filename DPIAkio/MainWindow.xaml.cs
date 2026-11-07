@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using DPIAkio.Services;
 using Microsoft.UI;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
@@ -18,21 +20,68 @@ public sealed partial class MainWindow : Window
     private readonly AppSettings _settings = AppSettings.Load();
     private readonly GoodbyeDpiRunner _runner = new();
     private bool _loading = true;
-    private bool _userStopped;
+    private bool _wantRunning;   // user wants GoodbyeDPI on (drives watchdog + network-change restarts)
+    private bool _exiting;
+    private bool _visible;
+    private readonly TrayIcon _tray;
+    private readonly DispatcherQueueTimer _netTimer;
+    private readonly DispatcherQueueTimer _restartTimer;
+    private readonly List<DateTime> _restarts = [];
 
-    public MainWindow()
+    public MainWindow(bool startInTray = false)
     {
         InitializeComponent();
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico"));
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "app.ico");
+        AppWindow.SetIcon(iconPath);
         var scale = GetDpiForWindow(WindowNative.GetWindowHandle(this)) / 96.0;
-        AppWindow.Resize(new SizeInt32((int)(880 * scale), (int)(860 * scale)));
+        AppWindow.Resize(new SizeInt32((int)(880 * scale), (int)(900 * scale)));
+        _visible = !startInTray;
 
         _runner.Output += line => DispatcherQueue.TryEnqueue(() => AppendLog(line));
         _runner.Exited += () => DispatcherQueue.TryEnqueue(OnProcessExited);
-        Closed += (_, _) => { SaveFromUi(); _runner.Stop(); };
+
+        // Tray
+        _tray = new TrayIcon(iconPath, "DPIAkio");
+        _tray.Clicked += ShowFromTray;
+        _tray.MenuProvider = () =>
+        [
+            (_runner.IsRunning ? "Tắt GoodbyeDPI" : "Bật GoodbyeDPI",
+                PowerButton.IsEnabled ? () => PowerButton_Click(this, new RoutedEventArgs()) : null),
+            ("Mở DPIAkio", ShowFromTray),
+            ("-", null),
+            ("Thoát", ExitApp),
+        ];
+        AppWindow.Closing += (_, e) =>
+        {
+            if (_exiting || !_settings.CloseToTray) return;
+            e.Cancel = true;
+            HideToTray();
+        };
+        Closed += (_, _) =>
+        {
+            _exiting = true;
+            SaveFromUi();
+            NetworkChange.NetworkAddressChanged -= OnNetworkAddressChanged;
+            _wantRunning = false;
+            _runner.Stop();
+            _tray.Dispose();
+        };
+
+        // Network changes (Wi-Fi <-> LAN, reconnects, resume from sleep): debounce, then flush DNS and
+        // make sure goodbyedpi is alive. WinDivert itself is interface-agnostic, so no restart is needed.
+        _netTimer = DispatcherQueue.CreateTimer();
+        _netTimer.Interval = TimeSpan.FromSeconds(3);
+        _netTimer.IsRepeating = false;
+        _netTimer.Tick += (_, _) => HandleNetworkChange();
+        NetworkChange.NetworkAddressChanged += OnNetworkAddressChanged;
+
+        _restartTimer = DispatcherQueue.CreateTimer();
+        _restartTimer.Interval = TimeSpan.FromSeconds(2);
+        _restartTimer.IsRepeating = false;
+        _restartTimer.Tick += (_, _) => { if (_wantRunning && !_runner.IsRunning) StartDpi(); };
 
         foreach (var m in ModePreset.All) ModeCombo.Items.Add(m);
         DnsGroupCombo.Items.Add(AllGroups);
@@ -44,8 +93,93 @@ public sealed partial class MainWindow : Window
         CheckFiles();
         UpdateStatus();
 
-        if (_settings.AutoStart && GoodbyeDpiRunner.MissingFiles().Count == 0)
+        _ = RefreshStartupToggleAsync();
+
+        // Launched by the logon task (--tray) => the user wants protection on.
+        if ((_settings.AutoStart || startInTray) && GoodbyeDpiRunner.MissingFiles().Count == 0)
             StartDpi();
+        if (startInTray) TrimMemory();
+    }
+
+    // ---------- window / tray ----------
+
+    public void ShowFromTray()
+    {
+        if (_exiting) return;
+        AppWindow.Show();
+        Activate();
+        SetForegroundWindow(WindowNative.GetWindowHandle(this));
+        _visible = true;
+        RenderLog();
+    }
+
+    private void HideToTray()
+    {
+        AppWindow.Hide();
+        _visible = false; // stop rendering log lines while hidden
+        TrimMemory();
+    }
+
+    private void ExitApp()
+    {
+        _exiting = true;
+        Close();
+    }
+
+    /// <summary>Give RAM back to the OS while sitting in the tray (more headroom for the game).</summary>
+    private static void TrimMemory()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, -1, -1);
+    }
+
+    // ---------- Windows startup ----------
+
+    private async Task RefreshStartupToggleAsync()
+    {
+        // Refresh the task when it exists so it follows the exe if the app folder was moved.
+        var registered = await Task.Run(() => StartupTask.IsRegistered() && StartupTask.Register().Ok);
+        _loading = true;
+        StartupToggle.IsOn = registered;
+        _loading = false;
+    }
+
+    private async void StartupToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        bool on = StartupToggle.IsOn;
+        StartupToggle.IsEnabled = false;
+        var (ok, output) = await Task.Run(() => on ? StartupTask.Register() : StartupTask.Unregister());
+        AppendLog(ok
+            ? (on ? "[DPIAkio] Đã đăng ký chạy cùng Windows (Task Scheduler: DPIAkio)." : "[DPIAkio] Đã gỡ chạy cùng Windows.")
+            : $"[DPIAkio] Lỗi Task Scheduler: {output}");
+        if (!ok)
+        {
+            _loading = true;
+            StartupToggle.IsOn = !on;
+            _loading = false;
+        }
+        StartupToggle.IsEnabled = true;
+    }
+
+    // ---------- network changes ----------
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e) =>
+        DispatcherQueue.TryEnqueue(() => { _netTimer.Stop(); _netTimer.Start(); });
+
+    private void HandleNetworkChange()
+    {
+        if (!_wantRunning || _exiting) return;
+        var online = NetworkInterface.GetIsNetworkAvailable();
+        var flushed = GoodbyeDpiRunner.FlushDnsCache();
+        AppendLog($"[DPIAkio] Mạng thay đổi{(online ? "" : " (đang mất mạng)")}. "
+                  + (flushed ? "Đã xóa cache DNS cũ." : "Không xóa được cache DNS."));
+        if (!_runner.IsRunning)
+        {
+            AppendLog("[DPIAkio] goodbyedpi không chạy, bật lại.");
+            StartDpi();
+        }
     }
 
     // ---------- settings <-> UI ----------
@@ -64,6 +198,7 @@ public sealed partial class MainWindow : Window
         BlacklistBox.Text = _settings.BlacklistPath;
         ExtraArgsBox.Text = _settings.ExtraArgs;
         AutoStartCheck.IsChecked = _settings.AutoStart;
+        CloseToTrayCheck.IsChecked = _settings.CloseToTray;
 
         _selectedProvider = DnsCatalog.Find(_settings.DnsProviderId)
             ?? DnsCatalog.Match(_settings.DnsAddr, _settings.DnsPort)
@@ -85,6 +220,7 @@ public sealed partial class MainWindow : Window
         _settings.BlacklistPath = BlacklistBox.Text;
         _settings.ExtraArgs = ExtraArgsBox.Text;
         _settings.AutoStart = AutoStartCheck.IsChecked == true;
+        _settings.CloseToTray = CloseToTrayCheck.IsChecked == true;
         _settings.Save();
     }
 
@@ -226,7 +362,7 @@ public sealed partial class MainWindow : Window
         AppendLog($"[DPIAkio] Chạy: goodbyedpi.exe {args}");
         try
         {
-            _userStopped = false;
+            _wantRunning = true;
             _runner.Start(args);
         }
         catch (Exception ex)
@@ -238,7 +374,8 @@ public sealed partial class MainWindow : Window
 
     private void StopDpi()
     {
-        _userStopped = true;
+        _wantRunning = false;
+        _restartTimer.Stop();
         _runner.Stop();
         AppendLog("[DPIAkio] Đã tắt.");
         UpdateStatus();
@@ -246,10 +383,25 @@ public sealed partial class MainWindow : Window
 
     private void OnProcessExited()
     {
-        if (!_userStopped)
+        // A stale Exited from an older process must not touch the current one.
+        if (_runner.IsRunning) { UpdateStatus(); return; }
+        _runner.Stop();
+
+        if (_wantRunning && !_exiting)
         {
-            AppendLog("[DPIAkio] goodbyedpi.exe đã thoát bất ngờ. Xem nhật ký ở trên.");
-            _runner.Stop();
+            // Watchdog: restart automatically, but give up on a crash loop (3 exits within 1 minute).
+            _restarts.RemoveAll(t => DateTime.Now - t > TimeSpan.FromMinutes(1));
+            if (_restarts.Count < 3)
+            {
+                _restarts.Add(DateTime.Now);
+                AppendLog("[DPIAkio] goodbyedpi.exe thoát bất ngờ, tự bật lại sau 2 giây…");
+                _restartTimer.Start();
+            }
+            else
+            {
+                _wantRunning = false;
+                AppendLog("[DPIAkio] goodbyedpi.exe thoát 3 lần trong 1 phút, ngừng tự bật lại. Xem nhật ký ở trên.");
+            }
         }
         UpdateStatus();
     }
@@ -272,15 +424,23 @@ public sealed partial class MainWindow : Window
         PowerGlyph.Glyph = on ? "" : "";
         OptionsHost.IsEnabled = !on;
         RunningHint.IsOpen = on;
+        _tray.SetTooltip(on ? "DPIAkio — đang bật" : "DPIAkio — đã tắt");
     }
 
     // ---------- log ----------
 
+    private readonly System.Text.StringBuilder _log = new();
+
     private void AppendLog(string line)
     {
-        var text = LogBox.Text + $"{DateTime.Now:HH:mm:ss}  {line}\n";
-        if (text.Length > MaxLogChars) text = text[^MaxLogChars..];
-        LogBox.Text = text;
+        _log.Append($"{DateTime.Now:HH:mm:ss}  {line}\n");
+        if (_log.Length > MaxLogChars) _log.Remove(0, _log.Length - MaxLogChars);
+        if (_visible) RenderLog(); // no UI work at all while hidden in the tray
+    }
+
+    private void RenderLog()
+    {
+        LogBox.Text = _log.ToString();
         LogBox.SelectionStart = LogBox.Text.Length;
         if (FindScrollViewer(LogBox) is { } sv) sv.ChangeView(null, sv.ScrollableHeight, null, true);
     }
@@ -296,7 +456,11 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
-    private void ClearLog_Click(object sender, RoutedEventArgs e) => LogBox.Text = "";
+    private void ClearLog_Click(object sender, RoutedEventArgs e)
+    {
+        _log.Clear();
+        LogBox.Text = "";
+    }
 
     private void OpenFolder_Click(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{GoodbyeDpiRunner.BinDir}\"") { UseShellExecute = true });
@@ -361,4 +525,10 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetProcessWorkingSetSize(IntPtr process, nint min, nint max);
 }

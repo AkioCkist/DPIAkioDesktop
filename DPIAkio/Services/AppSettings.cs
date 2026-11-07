@@ -18,6 +18,8 @@ public sealed class AppSettings
     public string BlacklistPath { get; set; } = "";
     public string ExtraArgs { get; set; } = "";
     public bool AutoStart { get; set; }
+    /// <summary>Closing the window hides it to the tray instead of exiting.</summary>
+    public bool CloseToTray { get; set; } = true;
 
     private static readonly string Dir =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DPIAkio");
