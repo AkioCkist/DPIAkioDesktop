@@ -356,7 +356,6 @@ public sealed partial class MainWindow : Window
     private async Task<List<DnsProvider>> ProbeAllAsync()
     {
         ProbeAllButton.IsEnabled = false;
-        DnsProbeStatus.Text = $"Đang đo… (truy vấn {ProbeHost})";
         var targets = DnsCatalog.All.Where(p => !p.IsCustom).ToList();
         foreach (var p in targets) { p.ProbeText = "…"; p.ProbeBrush = Res("TextFillColorTertiaryBrush"); p.LastLatency = null; }
 
@@ -374,9 +373,6 @@ public sealed partial class MainWindow : Window
         }));
 
         var ok = targets.Where(p => p.LastLatency != null).OrderBy(p => p.LastLatency).ToList();
-        DnsProbeStatus.Text = ok.Count == 0
-            ? "Không DNS nào trả đúng IP. Nếu goodbyedpi đang bật, tắt đi rồi đo lại."
-            : $"{ok.Count}/{targets.Count} DNS trả đúng IP. Nhanh nhất: {string.Join(", ", ok.Take(3).Select(p => $"{p.Name} ({p.LastLatency} ms)"))}.";
         ProbeAllButton.IsEnabled = !_runner.IsRunning;
         return ok;
     }
