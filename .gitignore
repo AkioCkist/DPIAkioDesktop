@@ -1,0 +1,15 @@
+# Build outputs
+/bin/
+/build/
+DPIAkio/bin/
+DPIAkio/obj/
+*.obj
+*.res
+
+# Downloaded third-party binaries (WinDivert; flagged by Defender, fetch manually)
+/deps/
+
+# IDE
+.vs/
+*.user
+*.suo
