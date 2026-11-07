@@ -10,12 +10,26 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <AssemblyName>DPIAkio</AssemblyName>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <!-- Single-file release (build-release.ps1 sets PublishSingleFile=true).
+       Everything (.NET, Windows App SDK, goodbyedpi + WinDivert) goes into one exe and is extracted
+       to %TEMP%\.net\DPIAkio\<hash>\ on first launch, so nothing has to be installed. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>

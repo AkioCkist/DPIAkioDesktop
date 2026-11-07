@@ -13,3 +13,6 @@ DPIAkio/obj/
 .vs/
 *.user
 *.suo
+
+# Release output
+/release/
