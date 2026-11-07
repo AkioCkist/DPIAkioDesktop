@@ -154,11 +154,7 @@
                                 </DataTemplate>
                             </ListView.ItemTemplate>
                         </ListView>
-
-                        <TextBlock x:Name="DnsProbeStatus" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Text="Mẹo: bấm Đo tốc độ khi goodbyedpi đang TẮT để kết quả chính xác." />
-
+                    
                         <!-- Active addresses (editable only for "Tùy chỉnh") -->
                         <Grid ColumnSpacing="12" RowSpacing="8">
                             <Grid.ColumnDefinitions>
