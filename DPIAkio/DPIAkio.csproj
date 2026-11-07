@@ -41,4 +41,15 @@
     <!-- goodbyedpi.exe + WinDivert.dll + WinDivert64.sys, built by build-goodbyedpi.ps1 -->
     <None Include="..\bin\**\*" Link="goodbyedpi\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <!-- Visual Studio "Run" (F5) on a fresh clone: compile goodbyedpi first when ..\bin is empty.
+       Needs WinDivert in ..\deps (see README). Items are added here because the glob above was
+       evaluated before this target produced the files. -->
+  <Target Name="BuildGoodbyeDpiIfMissing" BeforeTargets="AssignTargetPaths"
+          Condition="!Exists('$(MSBuildProjectDirectory)\..\bin\goodbyedpi.exe')">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\build-goodbyedpi.ps1&quot;" />
+    <ItemGroup>
+      <None Include="$(MSBuildProjectDirectory)\..\bin\**\*" Link="goodbyedpi\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

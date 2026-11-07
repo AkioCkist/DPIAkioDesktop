@@ -70,6 +70,18 @@
                         <ComboBox x:Name="ModeCombo" HorizontalAlignment="Stretch" SelectionChanged="Option_Changed" />
                         <TextBlock x:Name="ModeDesc" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsTextSelectionEnabled="True" />
+
+                        <!-- Plain-language explanation of the selected mode and each of its flags -->
+                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="6" Padding="14,12">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE946;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock Text="Giải thích" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                </StackPanel>
+                                <TextBlock x:Name="ModeExplain" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                <StackPanel x:Name="ModeFlagsPanel" Spacing="6" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
 

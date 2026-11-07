@@ -5,8 +5,14 @@ namespace DPIAkio;
 
 public partial class App : Application
 {
+#if DEBUG
+    // Separate name so F5 in Visual Studio always opens a window even while the release build sits in the tray.
+    private const string MutexName = @"Local\DPIAkio.SingleInstance.Debug";
+    private const string ShowEventName = @"Local\DPIAkio.Show.Debug";
+#else
     private const string MutexName = @"Local\DPIAkio.SingleInstance";
     private const string ShowEventName = @"Local\DPIAkio.Show";
+#endif
 
     private MainWindow? _window;
     private Mutex? _mutex;

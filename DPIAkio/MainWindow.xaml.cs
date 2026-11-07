@@ -238,7 +238,10 @@ public sealed partial class MainWindow : Window
 
     private void RefreshPreview()
     {
-        ModeDesc.Text = ModeCombo.SelectedItem is ModePreset m ? m.Description : "";
+        var mode = ModeCombo.SelectedItem as ModePreset;
+        ModeDesc.Text = mode?.Description ?? "";
+        ModeDesc.Visibility = string.IsNullOrEmpty(ModeDesc.Text) ? Visibility.Collapsed : Visibility.Visible;
+        ShowModeExplanation(mode);
         CommandPreview.Text = "goodbyedpi.exe " + _settings.BuildArguments();
         bool custom = _selectedProvider?.IsCustom ?? true;
         DnsAddrBox.IsEnabled = DnsPortBox.IsEnabled = DnsToggle.IsOn && custom;
@@ -246,6 +249,42 @@ public sealed partial class MainWindow : Window
         DnsV6AddrBox.IsEnabled = DnsV6PortBox.IsEnabled = DnsV6Toggle.IsEnabled && DnsV6Toggle.IsOn && custom;
         DnsList.IsEnabled = DnsSearchBox.IsEnabled = DnsGroupCombo.IsEnabled = DnsToggle.IsOn;
         BlacklistBox.IsEnabled = BlacklistCheck.IsChecked == true;
+    }
+
+    private ModePreset? _explainedMode;
+
+    private void ShowModeExplanation(ModePreset? mode)
+    {
+        if (mode == _explainedMode) return; // RefreshPreview runs on every keystroke; rebuild only on change
+        _explainedMode = mode;
+        ModeExplain.Text = mode?.Explanation ?? "";
+        ModeFlagsPanel.Children.Clear();
+        if (mode == null) return;
+
+        foreach (var (flag, help) in mode.ExplainFlags())
+        {
+            var row = new Grid { ColumnSpacing = 12 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            row.Children.Add(new TextBlock
+            {
+                Text = flag,
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 12,
+                Foreground = Res("AccentTextFillColorPrimaryBrush"),
+                IsTextSelectionEnabled = true,
+            });
+            var desc = new TextBlock
+            {
+                Text = help,
+                TextWrapping = TextWrapping.Wrap,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = Res("TextFillColorSecondaryBrush"),
+            };
+            Grid.SetColumn(desc, 1);
+            row.Children.Add(desc);
+            ModeFlagsPanel.Children.Add(row);
+        }
     }
 
     private void CheckFiles()

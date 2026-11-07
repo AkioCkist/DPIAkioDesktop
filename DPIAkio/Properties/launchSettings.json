@@ -1,0 +1,11 @@
+{
+  "profiles": {
+    "DPIAkio": {
+      "commandName": "Project"
+    },
+    "DPIAkio (start in tray)": {
+      "commandName": "Project",
+      "commandLineArgs": "--tray"
+    }
+  }
+}

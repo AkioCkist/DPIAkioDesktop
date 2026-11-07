@@ -55,8 +55,29 @@ What the script runs, if you want to do it by hand:
     DPIAkio\DPIAkio.csproj /restore /t:Publish `
     /p:Configuration=Release /p:Platform=x64 /p:RuntimeIdentifier=win-x64 `
     /p:SelfContained=true /p:PublishSingleFile=true `
-    /p:OutDir=build\app\ /p:PublishDir=release\
+    /p:IntermediateOutputPath=build\obj-release\ /p:OutDir=build\app\ /p:PublishDir=release\
 ```
+
+Always publish from a **clean** `IntermediateOutputPath` (the script deletes `build\obj-release\` first).
+Windows App SDK generates the WinRT activation manifest incrementally; if it reuses the one from a normal
+(multi-file) build, the manifest lacks the single-file DLL redirection (`loadFrom=...`) and the exe crashes on
+launch with `COMException 0x80040111: ClassFactory cannot supply requested class`.
+`build-release.ps1` checks the embedded manifest and fails the build if the redirection is missing.
+
+## Run / debug in Visual Studio
+
+1. Do step 1 of "Build a release" once (WinDivert in `deps/`).
+2. Open **`DPIAkio.sln`** in Visual Studio 2022. Pick `Debug | x64` and the launch profile **DPIAkio**
+   (or **DPIAkio (start in tray)** to test the `--tray` startup path).
+3. Press **F5**. The app requires administrator rights (WinDivert driver), so Visual Studio must run elevated:
+   when it asks to *restart under different credentials*, accept — or always start VS with
+   *Run as administrator* (right-click the VS shortcut → Properties → Advanced → Run as administrator).
+
+Notes:
+- The first build compiles `goodbyedpi.exe` automatically if `bin\goodbyedpi.exe` is missing.
+- Debug builds use their own single-instance lock, so F5 opens a window even while the release build sits in the tray.
+  Quit the release instance (tray icon → Thoát) before pressing *Bật* in the debug build, otherwise both fight over `goodbyedpi.exe`.
+- After editing C code in `native/src`, run `build-goodbyedpi.ps1` (VS only rebuilds it when `bin\` is empty).
 
 ## Dev build
 

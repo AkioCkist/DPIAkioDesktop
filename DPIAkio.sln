@@ -1,0 +1,31 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.0.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "DPIAkio", "DPIAkio\DPIAkio.csproj", "{6B1F3C2A-8E4D-4A57-9C1B-2D7E5F0A9B31}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{0E7C2B5D-3A41-4F6E-8B9A-1C2D3E4F5A6B}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		build-app.ps1 = build-app.ps1
+		build-goodbyedpi.ps1 = build-goodbyedpi.ps1
+		build-release.ps1 = build-release.ps1
+		README.md = README.md
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6B1F3C2A-8E4D-4A57-9C1B-2D7E5F0A9B31}.Debug|x64.ActiveCfg = Debug|x64
+		{6B1F3C2A-8E4D-4A57-9C1B-2D7E5F0A9B31}.Debug|x64.Build.0 = Debug|x64
+		{6B1F3C2A-8E4D-4A57-9C1B-2D7E5F0A9B31}.Release|x64.ActiveCfg = Release|x64
+		{6B1F3C2A-8E4D-4A57-9C1B-2D7E5F0A9B31}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
